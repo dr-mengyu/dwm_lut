@@ -2,18 +2,21 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
-using System.Xml;
+using System.Windows.Threading;
 using System.Xml.Linq;
+using NLog;
+using WindowsDisplayAPI.DisplayConfig;
 
 namespace DwmLutGUI
 {
     internal class MainViewModel : INotifyPropertyChanged
     {
+        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
         public event PropertyChangedEventHandler PropertyChanged;
 
         private string _activeText;
@@ -29,8 +32,9 @@ namespace DwmLutGUI
 
         public MainViewModel()
         {
+            Logger.Debug("Initializing MainViewModel");
             UpdateActiveStatus();
-            var dispatcherTimer = new System.Windows.Threading.DispatcherTimer();
+            var dispatcherTimer = new DispatcherTimer();
             dispatcherTimer.Tick += DispatcherTimer_Tick;
             dispatcherTimer.Interval = new TimeSpan(0, 0, 1);
             dispatcherTimer.Start();
@@ -89,7 +93,9 @@ namespace DwmLutGUI
                     new XElement("monitor", new XAttribute("path", x.DevicePath),
                         x.SdrLutPath != null ? new XAttribute("sdr_lut", x.SdrLutPath) : null,
                         x.HdrLutPath != null ? new XAttribute("hdr_lut", x.HdrLutPath) : null,
-                        x.SdrLuts != null ? new XElement("sdr_luts", x.SdrLuts.Select(s => new XElement("sdr_lut", s))) : null)));
+                        x.SdrLuts != null
+                            ? new XElement("sdr_luts", x.SdrLuts.Select(s => new XElement("sdr_lut", s)))
+                            : null)));
 
             xElem.Save(_configPath);
 
@@ -154,16 +160,20 @@ namespace DwmLutGUI
 
         public void UpdateMonitors()
         {
+            Logger.Debug("Updating monitors");
             var selectedPath = SelectedMonitor?.DevicePath;
+            Logger.Debug("Selected monitor: {0}, selected path: {1}", SelectedMonitor?.Name, selectedPath);
             _allMonitors.Clear();
             Monitors.Clear();
             List<XElement> config = null;
             if (File.Exists(_configPath))
             {
                 config = XElement.Load(_configPath).Descendants("monitor").ToList();
+                Logger.Debug("{} monitors found in the configuration", config.Count);
                 try
                 {
-                    _toggleKey = (Key)Enum.Parse(typeof(Key), (string)XElement.Load(_configPath).Attribute("lut_toggle"));
+                    _toggleKey = (Key)Enum.Parse(typeof(Key),
+                        (string)XElement.Load(_configPath).Attribute("lut_toggle"));
                 }
                 catch
                 {
@@ -172,10 +182,19 @@ namespace DwmLutGUI
             }
             else
             {
+                Logger.Debug("Configuration file not found");
                 _toggleKey = Key.Pause;
             }
 
-            var paths = WindowsDisplayAPI.DisplayConfig.PathInfo.GetActivePaths();
+            Logger.Debug("Toggle key: {0}", _toggleKey);
+
+            var allPaths = PathInfo.GetActivePaths();
+
+            var paths = PathInfo.GetActivePaths();
+
+            Logger.Debug("All paths: {0}, active paths: {1}",
+                string.Join(", ", allPaths.Select(p => p.ToString()).ToList()),
+                string.Join(", ", paths.Select(p => p.ToString()).ToList()));
             foreach (var path in paths)
             {
                 if (path.IsCloneMember) continue;
@@ -207,6 +226,7 @@ namespace DwmLutGUI
                     sdrLutPath = (string)settings.Attribute("sdr_lut");
                     hdrLutPath = (string)settings.Attribute("hdr_lut");
                 }
+
                 var sdrLutPaths = settings?.Element("sdr_luts")?.Elements("sdr_lut").Select(x => (string)x).ToList();
                 var hdrLutPaths = settings?.Element("hdr_luts")?.Elements("hdr_lut").Select(x => (string)x).ToList();
                 var monitor = new MonitorData(devicePath, path.DisplaySource.SourceId + 1, name, connector, position,
@@ -216,6 +236,8 @@ namespace DwmLutGUI
                 _allMonitors.Add(monitor);
                 Monitors.Add(monitor);
             }
+
+            Logger.Debug("Active monitors: {0}", string.Join(", ", Monitors.Select(m => m.ToString())));
 
             if (config != null)
             {
@@ -238,6 +260,8 @@ namespace DwmLutGUI
                 }
             }
 
+            Logger.Debug("All monitors: {0}", string.Join(", ", _allMonitors.Select(m => m.ToString())));
+
             if (selectedPath == null) return;
 
             var previous = Monitors.FirstOrDefault(monitor => monitor.DevicePath == selectedPath);
@@ -245,6 +269,9 @@ namespace DwmLutGUI
             {
                 SelectedMonitor = previous;
             }
+
+            Logger.Debug("Selected monitor: {0}", SelectedMonitor.ToString());
+            Logger.Debug("Monitors updated");
         }
 
         public void ReInject()
@@ -270,6 +297,7 @@ namespace DwmLutGUI
 
         private void UpdateActiveStatus()
         {
+            Logger.Debug("Updating active status");
             var status = Injector.GetStatus();
             if (status != null)
             {
@@ -288,6 +316,8 @@ namespace DwmLutGUI
                 IsActive = false;
                 ActiveText = "???";
             }
+
+            Logger.Debug("Active status updated");
         }
 
         public void OnDisplaySettingsChanged(object sender, EventArgs e)

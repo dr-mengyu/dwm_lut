@@ -1,9 +1,6 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
-using System.Windows.Input;
 
 namespace DwmLutGUI
 {
@@ -82,5 +79,10 @@ namespace DwmLutGUI
         public string SdrLutFilename => Path.GetFileName(SdrLutPath) ?? "None";
 
         public string HdrLutFilename => Path.GetFileName(HdrLutPath) ?? "None";
+
+        public override string ToString()
+        {
+            return $"{nameof(DevicePath)}: {DevicePath}, {nameof(SourceId)}: {SourceId}, {nameof(Name)}: {Name}, {nameof(Connector)}: {Connector}, {nameof(SdrLutFilename)}: {SdrLutFilename}, {nameof(HdrLutFilename)}: {HdrLutFilename}";
+        }
     }
 }

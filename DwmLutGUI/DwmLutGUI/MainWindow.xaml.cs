@@ -7,13 +7,16 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Forms;
 using System.Windows.Input;
 using Microsoft.Win32;
+using NLog;
+using NLog.Config;
+using NLog.Targets;
 using ContextMenu = System.Windows.Forms.ContextMenu;
 using MenuItem = System.Windows.Forms.MenuItem;
 using MessageBox = System.Windows.Forms.MessageBox;
+using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 
 namespace DwmLutGUI
 {
@@ -36,12 +39,14 @@ namespace DwmLutGUI
                 return;
             }
 
+            var args = Environment.GetCommandLineArgs().ToList();
+            args.RemoveAt(0);
+
+            ConfigureLogging(args.Contains("-debug") ? "Debug" : "Info");
+
             InitializeComponent();
             _viewModel = (MainViewModel)DataContext;
             _applyOnCooldown = false;
-
-            var args = Environment.GetCommandLineArgs().ToList();
-            args.RemoveAt(0);
 
             if (args.Contains("-apply"))
             {
@@ -145,7 +150,7 @@ namespace DwmLutGUI
 
         private static string BrowseLuts(string folder)
         {
-            var dlg = new Microsoft.Win32.OpenFileDialog
+            var dlg = new OpenFileDialog
             {
                 Filter = "LUT Files|*.cube;*.txt",
                 InitialDirectory = folder
@@ -283,6 +288,21 @@ namespace DwmLutGUI
             if (monitor == null) return;
             monitor.HdrLuts.Remove(monitor.HdrLutPath);
             monitor.HdrLutPath = monitor.HdrLuts.FirstOrDefault() ?? "None";
+        }
+        
+        private static void ConfigureLogging(string logLevel)
+        {
+            var config = new LoggingConfiguration();
+
+            // Targets where to log to: File and Console
+            var logfile = new FileTarget("logfile") { FileName = "${basedir}/logs/${shortdate}.log" };
+
+            // Rules for mapping loggers to targets
+            var minLevel = LogLevel.FromString(logLevel);
+            config.AddRule(minLevel, LogLevel.Fatal, logfile);
+
+            // Apply config
+            LogManager.Configuration = config;
         }
     }
 }

@@ -6,11 +6,14 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
+using NLog;
 
 namespace DwmLutGUI
 {
     internal static class Injector
     {
+        private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
+
         public static readonly bool NoDebug;
 
         private static readonly string DllName;
@@ -21,6 +24,7 @@ namespace DwmLutGUI
 
         static Injector()
         {
+            Logger.Debug("Initializing Injector");
             var basePath = Environment.ExpandEnvironmentVariables("%SYSTEMROOT%\\Temp\\");
             DllName = "dwm_lut.dll";
             DllPath = basePath + DllName;
@@ -33,6 +37,7 @@ namespace DwmLutGUI
             try
             {
                 Process.EnterDebugMode();
+                Logger.Debug("Entered debug mode");
             }
             catch (Exception)
             {
@@ -41,32 +46,45 @@ namespace DwmLutGUI
 #endif
                 NoDebug = true;
             }
+
+            Logger.Debug("Injector initialized");
         }
 
         public static bool? GetStatus()
         {
+            Logger.Debug("Getting status");
             if (NoDebug) return null;
 
             var dwmInstances = Process.GetProcessesByName("dwm");
+            Logger.Debug("Found {0} DWM instances", dwmInstances.Length);
             if (dwmInstances.Length == 0) return null;
 
             bool? result = false;
             foreach (var dwm in dwmInstances)
             {
-                var modules = dwm.Modules;
-                foreach (ProcessModule module in modules)
+                try
                 {
-                    if (module.ModuleName == DllName)
+                    var modules = dwm.Modules;
+                    foreach (ProcessModule module in modules)
                     {
-                        result = true;
-                    }
+                        if (module.ModuleName == DllName)
+                        {
+                            result = true;
+                        }
 
-                    module.Dispose();
+                        module.Dispose();
+                    }
+                }
+                catch (Exception e)
+                {
+                    Logger.Error(e, "Failed to get modules for process {0}", dwm.Id);
+                    throw;
                 }
 
                 dwm.Dispose();
             }
 
+            Logger.Debug("Active: {0}", result);
             return result;
         }
 
@@ -150,7 +168,7 @@ namespace DwmLutGUI
         public static void Inject(IEnumerable<MonitorData> monitors)
         {
             ElevatePrivilege();
-            
+
             File.Copy(AppDomain.CurrentDomain.BaseDirectory + DllName, DllPath, true);
             ClearPermissions(DllPath);
 
@@ -201,7 +219,7 @@ namespace DwmLutGUI
             }
 
             Directory.Delete(LutsPath, true);
-            
+
 
             if (!failed)
             {
@@ -286,7 +304,7 @@ namespace DwmLutGUI
 
         [DllImport("kernel32.dll")]
         private static extern IntPtr OpenProcess(DesiredAccess dwDesiredAccess, bool bInheritHandle,
-                       uint dwProcessId);
+            uint dwProcessId);
 
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool OpenProcessToken(IntPtr processHandle, DesiredAccess desiredAccess, out IntPtr tokenHandle);
