@@ -41,7 +41,7 @@ namespace DwmLutGUI
 
             _configPath = AppDomain.CurrentDomain.BaseDirectory + "config.xml";
 
-            _allMonitors = new List<MonitorData>();
+            AllMonitors = new List<MonitorData>();
             Monitors = new ObservableCollection<MonitorData>();
             UpdateMonitors();
 
@@ -89,7 +89,7 @@ namespace DwmLutGUI
         {
             var xElem = new XElement("monitors",
                 new XAttribute("lut_toggle", _toggleKey),
-                _allMonitors.Select(x =>
+                AllMonitors.Select(x =>
                     new XElement("monitor", new XAttribute("path", x.DevicePath),
                         x.SdrLutPath != null ? new XAttribute("sdr_lut", x.SdrLutPath) : null,
                         x.HdrLutPath != null ? new XAttribute("hdr_lut", x.HdrLutPath) : null,
@@ -155,51 +155,51 @@ namespace DwmLutGUI
 
         public bool CanApply { get; }
 
-        private List<MonitorData> _allMonitors { get; }
+        private List<MonitorData> AllMonitors { get; }
         public ObservableCollection<MonitorData> Monitors { get; }
 
-        public void UpdateMonitors()
+        private void UpdateMonitors()
         {
             Logger.Debug("Updating monitors");
-            var selectedPath = SelectedMonitor?.DevicePath;
-            Logger.Debug("Selected monitor: {0}, selected path: {1}", SelectedMonitor?.Name, selectedPath);
-            _allMonitors.Clear();
+            AllMonitors.Clear();
             Monitors.Clear();
-            List<XElement> config = null;
-            if (File.Exists(_configPath))
-            {
-                config = XElement.Load(_configPath).Descendants("monitor").ToList();
-                Logger.Debug("{} monitors found in the configuration", config.Count);
-                try
-                {
-                    _toggleKey = (Key)Enum.Parse(typeof(Key),
-                        (string)XElement.Load(_configPath).Attribute("lut_toggle"));
-                }
-                catch
-                {
-                    _toggleKey = Key.Pause;
-                }
-            }
-            else
-            {
-                Logger.Debug("Configuration file not found");
-                _toggleKey = Key.Pause;
-            }
 
-            Logger.Debug("Toggle key: {0}", _toggleKey);
+            // Load configuration
+            var config = LoadMonitorsFromConfig();
 
-            var allPaths = PathInfo.GetActivePaths();
+            // Load toggle key
+            _toggleKey = GetToggleKeyFromConfig();
 
+            // Load active monitors
             var paths = PathInfo.GetActivePaths();
-
-            Logger.Debug("All paths: {0}, active paths: {1}",
-                string.Join(", ", allPaths.Select(p => p.ToString()).ToList()),
-                string.Join(", ", paths.Select(p => p.ToString()).ToList()));
             foreach (var path in paths)
             {
                 if (path.IsCloneMember) continue;
+                var monitor = CreateActiveMonitorData(path, config);
+                AllMonitors.Add(monitor);
+                Monitors.Add(monitor);
+            }
+            Logger.Debug("Active monitors: {0}", string.Join(", ", Monitors.Select(m => m.ToString())));
+
+            // Load inactive monitors
+            foreach (var monitor in config)
+            {
+                var path = (string)monitor.Attribute("path");
+                if (path == null || Monitors.Any(x => x.DevicePath == path)) continue;
+
+                var newMonitorData = CreateMonitorData(monitor);
+                AllMonitors.Add(newMonitorData);
+            }
+            Logger.Debug("All monitors: {0}", string.Join(", ", AllMonitors.Select(m => m.ToString())));
+
+            UpdateSelectedMonitor();
+            
+            Logger.Debug("Monitors updated");
+            return;
+
+            MonitorData CreateActiveMonitorData(PathInfo path, IEnumerable<XElement> xElements)
+            {
                 var targetInfo = path.TargetsInfo[0];
-                var deviceId = targetInfo.DisplayTarget.TargetId;
                 var devicePath = targetInfo.DisplayTarget.DevicePath;
                 var name = targetInfo.DisplayTarget.FriendlyName;
                 if (string.IsNullOrEmpty(name))
@@ -215,63 +215,96 @@ namespace DwmLutGUI
 
                 var position = path.Position.X + "," + path.Position.Y;
 
-                string sdrLutPath = null;
-                string hdrLutPath = null;
+                var settings = xElements.FirstOrDefault(x => (string)x.Attribute("path") == devicePath);
+                var sdrLutPath = settings != null ? (string)settings.Attribute("sdr_lut") : null;
+                var hdrLutPath = settings != null ? (string)settings.Attribute("hdr_lut") : null;
 
-                var settings = config?.FirstOrDefault(x => (uint?)x.Attribute("id") == deviceId) ??
-                               config?.FirstOrDefault(x => (string)x.Attribute("path") == devicePath);
-
-                if (settings != null)
-                {
-                    sdrLutPath = (string)settings.Attribute("sdr_lut");
-                    hdrLutPath = (string)settings.Attribute("hdr_lut");
-                }
-
+                var monitorData = new MonitorData(devicePath, path.DisplaySource.SourceId + 1, name, connector, position,
+                    sdrLutPath, hdrLutPath);
                 var sdrLutPaths = settings?.Element("sdr_luts")?.Elements("sdr_lut").Select(x => (string)x).ToList();
                 var hdrLutPaths = settings?.Element("hdr_luts")?.Elements("hdr_lut").Select(x => (string)x).ToList();
-                var monitor = new MonitorData(devicePath, path.DisplaySource.SourceId + 1, name, connector, position,
-                    sdrLutPath, hdrLutPath);
-                if (sdrLutPaths != null) monitor.SdrLuts = new ObservableCollection<string>(sdrLutPaths);
-                if (hdrLutPaths != null) monitor.HdrLuts = new ObservableCollection<string>(hdrLutPaths);
-                _allMonitors.Add(monitor);
-                Monitors.Add(monitor);
+                if (sdrLutPaths != null) monitorData.SdrLuts = new ObservableCollection<string>(sdrLutPaths);
+                if (hdrLutPaths != null) monitorData.HdrLuts = new ObservableCollection<string>(hdrLutPaths);
+                return monitorData;
             }
 
-            Logger.Debug("Active monitors: {0}", string.Join(", ", Monitors.Select(m => m.ToString())));
-
-            if (config != null)
+            MonitorData CreateMonitorData(XElement monitor)
             {
-                foreach (var monitor in config)
+                var sdrLutPath = (string)monitor.Attribute("sdr_lut");
+                var hdrLutPath = (string)monitor.Attribute("hdr_lut");
+
+                var monitorData = new MonitorData((string)monitor.Attribute("path"), sdrLutPath, hdrLutPath);
+                var sdrLutPaths = monitor.Element("sdr_luts")?.Elements("sdr_lut").Select(x => (string)x).ToList();
+                var hdrLutPaths = monitor.Element("hdr_luts")?.Elements("hdr_lut").Select(x => (string)x).ToList();
+                if (sdrLutPaths != null) monitorData.SdrLuts = new ObservableCollection<string>(sdrLutPaths);
+                if (hdrLutPaths != null) monitorData.HdrLuts = new ObservableCollection<string>(hdrLutPaths);
+                return monitorData;
+            }
+
+            void UpdateSelectedMonitor()
+            {
+                var selectedPath = SelectedMonitor?.DevicePath;
+                if (selectedPath != null)
                 {
-                    var path = (string)monitor.Attribute("path");
-                    if (path == null || Monitors.Any(x => x.DevicePath == path)) continue;
-
-                    var sdrLutPath = (string)monitor.Attribute("sdr_lut");
-                    var hdrLutPath = (string)monitor.Attribute("hdr_lut");
-
-                    var sdrLutPaths = monitor.Element("sdr_luts")?.Elements("sdr_lut").Select(x => (string)x).ToList();
-                    var hdrLutPaths = monitor.Element("hdr_luts")?.Elements("hdr_lut").Select(x => (string)x).ToList();
-                    var newMonitorData = new MonitorData(path, sdrLutPath, hdrLutPath)
+                    var previous = Monitors.FirstOrDefault(monitor => monitor.DevicePath == selectedPath);
+                    if (previous != null)
                     {
-                        SdrLuts = new ObservableCollection<string>(sdrLutPaths),
-                        HdrLuts = new ObservableCollection<string>(hdrLutPaths)
-                    };
-                    _allMonitors.Add(newMonitorData);
+                        SelectedMonitor = previous;
+                    }
                 }
+                Logger.Debug("Selected monitor: {0}", SelectedMonitor?.ToString());
             }
-
-            Logger.Debug("All monitors: {0}", string.Join(", ", _allMonitors.Select(m => m.ToString())));
-
-            if (selectedPath == null) return;
-
-            var previous = Monitors.FirstOrDefault(monitor => monitor.DevicePath == selectedPath);
-            if (previous != null)
+        }
+        
+        private List<XElement> LoadMonitorsFromConfig()
+        {
+            if (!File.Exists(_configPath))
             {
-                SelectedMonitor = previous;
+                Logger.Debug("Configuration file not found: {0}", _configPath);
+                return new List<XElement>();
             }
 
-            Logger.Debug("Selected monitor: {0}", SelectedMonitor.ToString());
-            Logger.Debug("Monitors updated");
+            List<XElement> config;
+            try
+            {
+                config = XElement.Load(_configPath).Descendants("monitor").ToList();
+                Logger.Debug("{0} monitors found in configuration", config.Count);
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e, "Configuration load failed");
+                config = new List<XElement>();
+            }
+
+            return config;
+        }
+
+        /**
+         * Get toggle key configuration from _configPath.
+         * Return Key.Pause if _configPath doesn't exist or can't be loaded.
+         */
+        private Key GetToggleKeyFromConfig()
+        {
+            if (!File.Exists(_configPath))
+            {
+                Logger.Debug("Configuration file not found: {0}", _configPath);
+                return Key.Pause;
+            }
+
+            Key key;
+            try
+            {
+                key = (Key)Enum.Parse(typeof(Key),
+                    (string)XElement.Load(_configPath).Attribute("lut_toggle"));
+                Logger.Debug("Toggle key from configuration: {0}", key.ToString());
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e, "Configuration load failed, using Pause key as default");
+                key = Key.Pause;
+            }
+
+            return key;
         }
 
         public void ReInject()
