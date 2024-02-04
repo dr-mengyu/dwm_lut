@@ -8,7 +8,7 @@ namespace DwmLutGUI
 {
     public class KeyboardListener : IDisposable
     {
-        private static IntPtr hookId = IntPtr.Zero;
+        private static IntPtr _hookId = IntPtr.Zero;
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -22,7 +22,7 @@ namespace DwmLutGUI
                 Console.WriteLine("Error somewhere in the key hook");
             }
 
-            return InterceptKeys.CallNextHookEx(hookId, nCode, wParam, lParam);
+            return InterceptKeys.CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
 
         private IntPtr HookCallbackInner(int nCode, IntPtr wParam, IntPtr lParam)
@@ -34,7 +34,7 @@ namespace DwmLutGUI
                     int vkCode = Marshal.ReadInt32(lParam);
                     if (KeyDown != null)
                     {
-                        KeyDown(this, new RawKeyEventArgs(vkCode, false));
+                        KeyDown(this, new RawKeyEventArgs(vkCode));
                     }
                 }
                 else if (wParam == (IntPtr)InterceptKeys.WM_KEYUP)
@@ -43,11 +43,11 @@ namespace DwmLutGUI
 
                     if (KeyUp != null)
                     {
-                        KeyUp(this, new RawKeyEventArgs(vkCode, false));
+                        KeyUp(this, new RawKeyEventArgs(vkCode));
                     }
                 }
             }
-            return InterceptKeys.CallNextHookEx(hookId, nCode, wParam, lParam);
+            return InterceptKeys.CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
 
         public event RawKeyEventHandler KeyDown;
@@ -55,7 +55,7 @@ namespace DwmLutGUI
 
         public KeyboardListener()
         {
-            hookId = InterceptKeys.SetHook(HookCallback);
+            _hookId = InterceptKeys.SetHook(HookCallback);
         }
 
         ~KeyboardListener()
@@ -67,7 +67,7 @@ namespace DwmLutGUI
 
         public void Dispose()
         {
-            InterceptKeys.UnhookWindowsHookEx(hookId);
+            InterceptKeys.UnhookWindowsHookEx(_hookId);
         }
         #endregion
 
@@ -76,7 +76,8 @@ namespace DwmLutGUI
     internal static class InterceptKeys
     {
         public delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
-        public static LowLevelKeyboardProc _proc = null;
+
+        private static LowLevelKeyboardProc _proc;
 
         public static int WH_KEYBOARD_LL = 13;
         public static int WM_KEYDOWN = 0x0100;
@@ -108,15 +109,11 @@ namespace DwmLutGUI
 
     public class RawKeyEventArgs : EventArgs
     {
-        public int VKCode;
-        public Key Key;
-        public bool IsSysKey;
+        public readonly Key Key;
 
-        public RawKeyEventArgs(int VKCode, bool isSysKey)
+        public RawKeyEventArgs(int vkCode)
         {
-            this.VKCode = VKCode;
-            this.IsSysKey = isSysKey;
-            this.Key = System.Windows.Input.KeyInterop.KeyFromVirtualKey(VKCode);
+            Key = KeyInterop.KeyFromVirtualKey(vkCode);
         }
     }
 

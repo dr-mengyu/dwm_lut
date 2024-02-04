@@ -41,7 +41,7 @@ namespace DwmLutGUI
 
             _configPath = AppDomain.CurrentDomain.BaseDirectory + "config.xml";
 
-            AllMonitors = new List<MonitorData>();
+            _allMonitors = new List<MonitorData>();
             Monitors = new ObservableCollection<MonitorData>();
             UpdateMonitors();
 
@@ -89,7 +89,7 @@ namespace DwmLutGUI
         {
             var xElem = new XElement("monitors",
                 new XAttribute("lut_toggle", _toggleKey),
-                AllMonitors.Select(x =>
+                _allMonitors.Select(x =>
                     new XElement("monitor", new XAttribute("path", x.DevicePath),
                         x.SdrLutPath != null ? new XAttribute("sdr_lut", x.SdrLutPath) : null,
                         x.HdrLutPath != null ? new XAttribute("hdr_lut", x.HdrLutPath) : null,
@@ -155,13 +155,14 @@ namespace DwmLutGUI
 
         public bool CanApply { get; }
 
-        private List<MonitorData> AllMonitors { get; }
+        private readonly List<MonitorData> _allMonitors;
+        
         public ObservableCollection<MonitorData> Monitors { get; }
 
         private void UpdateMonitors()
         {
             Logger.Debug("Updating monitors");
-            AllMonitors.Clear();
+            _allMonitors.Clear();
             Monitors.Clear();
 
             // Load configuration
@@ -176,7 +177,7 @@ namespace DwmLutGUI
             {
                 if (path.IsCloneMember) continue;
                 var monitor = CreateActiveMonitorData(path, config);
-                AllMonitors.Add(monitor);
+                _allMonitors.Add(monitor);
                 Monitors.Add(monitor);
             }
             Logger.Debug("Active monitors: {0}", string.Join(", ", Monitors.Select(m => m.ToString())));
@@ -188,9 +189,9 @@ namespace DwmLutGUI
                 if (path == null || Monitors.Any(x => x.DevicePath == path)) continue;
 
                 var newMonitorData = CreateMonitorData(monitor);
-                AllMonitors.Add(newMonitorData);
+                _allMonitors.Add(newMonitorData);
             }
-            Logger.Debug("All monitors: {0}", string.Join(", ", AllMonitors.Select(m => m.ToString())));
+            Logger.Debug("All monitors: {0}", string.Join(", ", _allMonitors.Select(m => m.ToString())));
 
             UpdateSelectedMonitor();
             
